@@ -1,9 +1,7 @@
 """
-Step 2: Feature Pipeline
-Fetches raw weather + AQI data, extracts clean numeric features,
-adds time-based features, and appends a row to a local CSV file.
-
-Run this manually every so often (or on a schedule later) to build up history.
+Step 2 (v2): Feature Pipeline - now using Open-Meteo for BOTH weather and AQI.
+This replaces WAQI, whose Karachi station was returning frozen/stale AQI values.
+Open-Meteo's forecast endpoint gives current + near-term data, updated regularly.
 """
 
 import os
@@ -14,39 +12,43 @@ import requests
 import csv
 from datetime import datetime
 
-OPENWEATHER_API_KEY = os.environ.get("OPENWEATHER_API_KEY")
-WAQI_TOKEN = os.environ.get("WAQI_TOKEN")
-
-CITY = "Karachi"
 LAT, LON = 24.8607, 67.0011
 CSV_FILE = "aqi_features.csv"
 
+WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
+AQI_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
-def get_weather():
-    url = "https://api.openweathermap.org/data/2.5/weather"
-    params = {"lat": LAT, "lon": LON, "appid": OPENWEATHER_API_KEY, "units": "metric"}
-    response = requests.get(url, params=params)
+
+def get_current_weather():
+    params = {
+        "latitude": LAT,
+        "longitude": LON,
+        "current": "temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m",
+        "timezone": "Asia/Karachi"
+    }
+    response = requests.get(WEATHER_URL, params=params)
     return response.json()
 
 
-def get_aqi():
-    url = "https://api.waqi.info/feed/karachi/"
-    params = {"token": WAQI_TOKEN}
-    response = requests.get(url, params=params)
+def get_current_aqi():
+    params = {
+        "latitude": LAT,
+        "longitude": LON,
+        "current": "us_aqi,pm2_5,pm10,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone",
+        "timezone": "Asia/Karachi"
+    }
+    response = requests.get(AQI_URL, params=params)
     return response.json()
 
 
 def build_feature_row():
-    weather = get_weather()
-    aqi_data = get_aqi()
+    weather = get_current_weather()
+    aqi_data = get_current_aqi()
 
     now = datetime.now()
 
-    main = weather.get("main", {})
-    wind = weather.get("wind", {})
-
-    data = aqi_data.get("data", {})
-    iaqi = data.get("iaqi", {})
+    w_current = weather.get("current", {})
+    a_current = aqi_data.get("current", {})
 
     row = {
         "timestamp": now.isoformat(),
@@ -55,18 +57,18 @@ def build_feature_row():
         "month": now.month,
         "day_of_week": now.weekday(),
 
-        "temperature": main.get("temp"),
-        "humidity": main.get("humidity"),
-        "pressure": main.get("pressure"),
-        "wind_speed": wind.get("speed"),
+        "temperature": w_current.get("temperature_2m"),
+        "humidity": w_current.get("relative_humidity_2m"),
+        "pressure": w_current.get("surface_pressure"),
+        "wind_speed": w_current.get("wind_speed_10m"),
 
-        "aqi": data.get("aqi"),
-        "pm25": iaqi.get("pm25", {}).get("v"),
-        "pm10": iaqi.get("pm10", {}).get("v"),
-        "o3": iaqi.get("o3", {}).get("v"),
-        "no2": iaqi.get("no2", {}).get("v"),
-        "so2": iaqi.get("so2", {}).get("v"),
-        "co": iaqi.get("co", {}).get("v"),
+        "aqi": a_current.get("us_aqi"),
+        "pm25": a_current.get("pm2_5"),
+        "pm10": a_current.get("pm10"),
+        "o3": a_current.get("ozone"),
+        "no2": a_current.get("nitrogen_dioxide"),
+        "so2": a_current.get("sulphur_dioxide"),
+        "co": a_current.get("carbon_monoxide"),
     }
     return row
 
