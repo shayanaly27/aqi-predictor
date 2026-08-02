@@ -1,11 +1,11 @@
 """
-Backfill Script: Pull 2 years of historical weather + AQI data from Open-Meteo
+Backfill Script: Pull 3.5 years of historical weather + AQI data from Open-Meteo
 and save it as a clean CSV - this becomes the core training dataset.
 
 Open-Meteo limits how much data you can request in a single call, so we
 request it in monthly chunks and combine everything into one CSV.
 
-Run this ONCE to build your historical dataset. Takes a few minutes.
+Run this ONCE to build your historical dataset. Takes a while (42+ chunks).
 """
 
 import requests
@@ -14,7 +14,7 @@ import time
 from datetime import datetime, timedelta
 
 LAT, LON = 24.8607, 67.0011
-OUTPUT_FILE = "aqi_historical_backfill.csv"
+OUTPUT_FILE = "aqi_historical_backfill_v2.csv"
 
 WEATHER_URL = "https://archive-api.open-meteo.com/v1/archive"
 AQI_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
@@ -47,6 +47,7 @@ def get_aqi_chunk(start_date, end_date):
 
 
 def generate_month_ranges(start_date, end_date):
+    """Break the full date range into monthly (start, end) chunks."""
     ranges = []
     current = start_date
     while current < end_date:
@@ -112,7 +113,7 @@ def build_rows_for_chunk(start_date, end_date):
 
 if __name__ == "__main__":
     end_date = datetime.now()
-    start_date = end_date - timedelta(days=730)  # ~2 years
+    start_date = end_date - timedelta(days=1280)  # ~3.5 years
 
     chunks = generate_month_ranges(start_date, end_date)
     print(f"Will fetch {len(chunks)} monthly chunks from {chunks[0][0]} to {chunks[-1][1]}")

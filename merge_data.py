@@ -1,18 +1,18 @@
 """
-Merge Script: Combines the 2-year historical backfill with the live hourly
+Merge Script: Combines the historical backfill with the live hourly
 feature data into one clean, deduplicated dataset ready for model training.
 """
 
 import pandas as pd
 
-HISTORICAL_FILE = "aqi_historical_backfill.csv"
+HISTORICAL_FILE = "aqi_historical_backfill_v2.csv"
 LIVE_FILE = "aqi_features.csv"
 OUTPUT_FILE = "aqi_training_data.csv"
 
 
 def load_and_clean(filepath):
     df = pd.read_csv(filepath)
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df["timestamp"] = pd.to_datetime(df["timestamp"], format="mixed")
     return df
 
 
