@@ -1,0 +1,39 @@
+name: Training Pipeline
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # runs once a day at 2:00 AM UTC (~7:00 AM Karachi time)
+  workflow_dispatch:        # lets you also trigger it manually from GitHub
+
+permissions:
+  contents: write
+
+jobs:
+  run-training-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pandas numpy scikit-learn xgboost joblib
+
+      - name: Run merge script (rebuild training dataset with latest data)
+        run: python merge_data.py
+
+      - name: Run training pipeline
+        run: python train_model.py
+
+      - name: Commit and push updated models + training data
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add aqi_training_data.csv models/
+          git diff --quiet --cached || git commit -m "Automated daily model retraining"
+          git push
