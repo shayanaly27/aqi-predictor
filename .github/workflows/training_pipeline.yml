@@ -22,10 +22,15 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install pandas numpy scikit-learn xgboost joblib
+        run: pip install pandas numpy scikit-learn xgboost joblib hopsworks pyarrow confluent-kafka python-dotenv
 
       - name: Run merge script (rebuild training dataset with latest data)
         run: python merge_data.py
+
+      - name: Sync merged data to Hopsworks Feature Store
+        env:
+          HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
+        run: python push_to_hopsworks.py
 
       - name: Run training pipeline
         run: python train_model.py
