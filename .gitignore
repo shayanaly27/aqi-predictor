@@ -2,3 +2,4 @@
 
 __pycache__/
 *.pyc
+hopsworks_certs/
