@@ -1,29 +1,79 @@
 """
 Prediction Script
-Takes the most recent data (live + enough history for lag/rolling features),
-engineers the same features used in training, loads the 3 saved models,
-and outputs a clean 3-day AQI forecast.
+Takes the most recent data (live + enough history for lag/rolling features)
+from the Hopsworks Feature Store, engineers the same features used in
+training, loads the 3 saved models, and outputs a clean 3-day AQI forecast.
 
 This is what your API / dashboard will call.
 """
 
+import os
 import pandas as pd
 import joblib
-import os
 
-DATA_FILE = "aqi_training_data.csv"
+from dotenv import load_dotenv
+load_dotenv()
+
+import hopsworks
+
+DATA_FILE = "aqi_training_data.csv"          # fallback only
 MODEL_DIR = "models"
 
+HOPSWORKS_API_KEY = os.environ.get("HOPSWORKS_API_KEY")
+HOPSWORKS_PROJECT = "aqi_predictor_ksa"
+HOPSWORKS_HOST = "eu-west.cloud.hopsworks.ai"
 
-def load_recent_data(hours_needed=72):
+FEATURE_VIEW_NAME = "aqi_feature_view"
+FEATURE_VIEW_VERSION = 1
+
+
+def connect_to_hopsworks():
+    cert_dir = os.path.join(os.getcwd(), "hopsworks_certs")
+    os.makedirs(cert_dir, exist_ok=True)
+
+    project = hopsworks.login(
+        project=HOPSWORKS_PROJECT,
+        host=HOPSWORKS_HOST,
+        port=443,
+        api_key_value=HOPSWORKS_API_KEY,
+        cert_folder=cert_dir,
+    )
+    return project
+
+
+def load_recent_data_from_feature_store(hours_needed=72):
+    project = connect_to_hopsworks()
+    fs = project.get_feature_store()
+
+    fv = fs.get_feature_view(name=FEATURE_VIEW_NAME, version=FEATURE_VIEW_VERSION)
+    df = fv.get_batch_data()
+
+    df["timestamp"] = pd.to_datetime(df["timestamp"], format="mixed")
+    df = df.drop_duplicates(subset="timestamp").sort_values("timestamp").reset_index(drop=True)
+    df = df.dropna(subset=["pm10", "o3", "no2", "so2", "co"]).reset_index(drop=True)
+
+    recent = df.tail(hours_needed + 10).reset_index(drop=True)
+    print(f"✅ Loaded recent data from Feature Store ({len(recent)} rows)")
+    return recent
+
+
+def load_recent_data_from_csv(hours_needed=72):
+    print("⚠️ Falling back to local CSV (Hopsworks unavailable)")
     df = pd.read_csv(DATA_FILE)
     df["timestamp"] = pd.to_datetime(df["timestamp"], format="mixed")
     df = df.sort_values("timestamp").reset_index(drop=True)
-
     df = df.dropna(subset=["pm10", "o3", "no2", "so2", "co"]).reset_index(drop=True)
 
     recent = df.tail(hours_needed + 10).reset_index(drop=True)
     return recent
+
+
+def load_recent_data(hours_needed=72):
+    try:
+        return load_recent_data_from_feature_store(hours_needed)
+    except Exception as e:
+        print(f"  -> Feature Store read failed: {e}")
+        return load_recent_data_from_csv(hours_needed)
 
 
 def engineer_features_for_prediction(df):
@@ -123,4 +173,4 @@ if __name__ == "__main__":
     for day_key, data in result["forecast"].items():
         day_label = day_key.replace("_", " ").title()
         alert = " ⚠️ HAZARDOUS ALERT" if data["is_hazardous"] else ""
-        print(f"{day_label}: {data['predicted_aqi']} ({data['category']}){alert}")
+        print(f"{day_label}: {data['predicted_aqi']} ({data['category']}){alert}")  

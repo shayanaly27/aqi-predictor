@@ -1,34 +1,86 @@
 """
 Training Pipeline
-1. Loads the merged training dataset
+1. Fetches historical (features, targets) from the Hopsworks Feature Store
+   (falls back to the local CSV if Hopsworks is unavailable)
 2. Cleans it and engineers extra features (lag values, rolling averages, AQI change rate, pressure trend)
 3. Creates 3 targets: AQI 24h, 48h, and 72h ahead
 4. Trains Ridge Regression, Random Forest, and XGBoost for each target
-5. Evaluates with RMSE, MAE, R²
-6. Saves the best model per horizon to disk (model registry, local version)
+5. Evaluates with RMSE, MAE, R2
+6. Saves the best model per horizon locally AND to the Hopsworks Model Registry
 """
 
+import os
 import pandas as pd
 import numpy as np
 import joblib
-import os
+
+from dotenv import load_dotenv
+load_dotenv()
 
 from sklearn.linear_model import Ridge
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from xgboost import XGBRegressor
 
-DATA_FILE = "aqi_training_data.csv"
+import hopsworks
+
+DATA_FILE = "aqi_training_data.csv"          # fallback only
 MODEL_DIR = "models"
+
+HOPSWORKS_API_KEY = os.environ.get("HOPSWORKS_API_KEY")
+HOPSWORKS_PROJECT = "aqi_predictor_ksa"
+HOPSWORKS_HOST = "eu-west.cloud.hopsworks.ai"
+
+FEATURE_VIEW_NAME = "aqi_feature_view"
+FEATURE_VIEW_VERSION = 1
 
 os.makedirs(MODEL_DIR, exist_ok=True)
 
 
-def load_data():
+def connect_to_hopsworks():
+    cert_dir = os.path.join(os.getcwd(), "hopsworks_certs")
+    os.makedirs(cert_dir, exist_ok=True)
+
+    project = hopsworks.login(
+        project=HOPSWORKS_PROJECT,
+        host=HOPSWORKS_HOST,
+        port=443,
+        api_key_value=HOPSWORKS_API_KEY,
+        cert_folder=cert_dir,
+    )
+    print(f"✅ Connected to Hopsworks project: {project.name}")
+    return project
+
+
+def load_data_from_feature_store():
+    """Fetch raw features from the Hopsworks Feature View."""
+    project = connect_to_hopsworks()
+    fs = project.get_feature_store()
+
+    fv = fs.get_feature_view(name=FEATURE_VIEW_NAME, version=FEATURE_VIEW_VERSION)
+    df = fv.get_batch_data()
+
+    df["timestamp"] = pd.to_datetime(df["timestamp"], format="mixed")
+    df = df.drop_duplicates(subset="timestamp").sort_values("timestamp").reset_index(drop=True)
+
+    print(f"✅ Loaded {len(df)} rows from Feature Store ({FEATURE_VIEW_NAME} v{FEATURE_VIEW_VERSION})")
+    return project, df
+
+
+def load_data_from_csv():
+    print("⚠️ Falling back to local CSV (Hopsworks unavailable)")
     df = pd.read_csv(DATA_FILE)
     df["timestamp"] = pd.to_datetime(df["timestamp"], format="mixed")
     df = df.sort_values("timestamp").reset_index(drop=True)
-    return df
+    return None, df
+
+
+def load_data():
+    try:
+        return load_data_from_feature_store()
+    except Exception as e:
+        print(f"  -> Feature Store read failed: {e}")
+        return load_data_from_csv()
 
 
 def clean_data(df):
@@ -106,14 +158,39 @@ def train_and_evaluate(df, target_col, feature_cols):
 
     best_name = min(results, key=lambda k: results[k]["rmse"])
     best_model = results[best_name]["model"]
+    best_metrics = results[best_name]
     print(f"  -> Best model: {best_name}")
 
-    return best_name, best_model, results
+    return best_name, best_model, best_metrics
+
+
+def push_model_to_registry(project, model_path, target_col, best_name, metrics):
+    """Store the trained model in the Hopsworks Model Registry."""
+    if project is None:
+        print("  ⚠️ No Hopsworks connection - skipping Model Registry upload")
+        return
+
+    try:
+        mr = project.get_model_registry()
+
+        model_meta = mr.python.create_model(
+            name=f"aqi_{target_col}_model",
+            metrics={
+                "rmse": float(metrics["rmse"]),
+                "mae": float(metrics["mae"]),
+                "r2": float(metrics["r2"]),
+            },
+            description=f"Best model ({best_name}) for {target_col} AQI forecast",
+        )
+        model_meta.save(model_path)
+        print(f"  ✅ Pushed {target_col} model to Hopsworks Model Registry")
+    except Exception as e:
+        print(f"  ⚠️ Model Registry upload failed: {e}")
 
 
 if __name__ == "__main__":
     print("Loading data...")
-    df = load_data()
+    project, df = load_data()
     print(f"  -> {len(df)} rows loaded")
 
     print("\nCleaning data...")
@@ -133,10 +210,12 @@ if __name__ == "__main__":
 
     for target_col, label in targets.items():
         print(f"\n=== Training models for {label} ===")
-        best_name, best_model, results = train_and_evaluate(df, target_col, feature_cols)
+        best_name, best_model, metrics = train_and_evaluate(df, target_col, feature_cols)
 
         model_path = os.path.join(MODEL_DIR, f"{target_col}_model.pkl")
         joblib.dump(best_model, model_path)
-        print(f"  ✅ Saved best model to {model_path}")
+        print(f"  ✅ Saved best model locally to {model_path}")
 
-    print("\n✅ Training pipeline complete. All models saved in the 'models' folder.")
+        push_model_to_registry(project, model_path, target_col, best_name, metrics)
+
+    print("\n✅ Training pipeline complete. All models saved locally and to the Model Registry.")
