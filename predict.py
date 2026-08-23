@@ -156,6 +156,14 @@ def predict_next_3_days():
         "based_on_timestamp": str(latest_row["timestamp"].values[0]),
         "current_aqi": float(latest_row["aqi"].values[0]),
         "current_category": aqi_category(float(latest_row["aqi"].values[0])),
+        "pollutants": {
+            "pm25": round(float(latest_row["pm25"].values[0]), 1),
+            "pm10": round(float(latest_row["pm10"].values[0]), 1),
+            "o3": round(float(latest_row["o3"].values[0]), 1),
+            "no2": round(float(latest_row["no2"].values[0]), 1),
+            "so2": round(float(latest_row["so2"].values[0]), 1),
+            "co": round(float(latest_row["co"].values[0]), 2),
+        },
         "forecast": predictions
     }
 
@@ -168,9 +176,10 @@ if __name__ == "__main__":
     print("=== AQI Forecast ===")
     print(f"Based on data from: {result['based_on_timestamp']}")
     print(f"Current AQI: {result['current_aqi']} ({result['current_category']})")
+    print(f"Pollutants: {result['pollutants']}")
     print()
 
     for day_key, data in result["forecast"].items():
         day_label = day_key.replace("_", " ").title()
         alert = " ⚠️ HAZARDOUS ALERT" if data["is_hazardous"] else ""
-        print(f"{day_label}: {data['predicted_aqi']} ({data['category']}){alert}")  
+        print(f"{day_label}: {data['predicted_aqi']} ({data['category']}){alert}")

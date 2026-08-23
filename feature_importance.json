@@ -1,0 +1,38 @@
+{
+  "horizon": "Day 1 (24h ahead)",
+  "model": "XGBRegressor",
+  "top_features": [
+    {
+      "feature": "pm25",
+      "importance": 8.7737
+    },
+    {
+      "feature": "aqi",
+      "importance": 5.5218
+    },
+    {
+      "feature": "month",
+      "importance": 1.7497
+    },
+    {
+      "feature": "aqi_lag_24h",
+      "importance": 1.6709
+    },
+    {
+      "feature": "aqi_roll_mean_24h",
+      "importance": 1.4593
+    },
+    {
+      "feature": "pressure",
+      "importance": 1.208
+    },
+    {
+      "feature": "aqi_roll_mean_72h",
+      "importance": 1.206
+    },
+    {
+      "feature": "hour",
+      "importance": 1.1091
+    }
+  ]
+}
