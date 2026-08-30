@@ -1,7 +1,8 @@
 """
 FastAPI Backend
 Exposes the 3-day AQI forecast, historical trend, SHAP feature importance,
-and model comparison metrics as JSON API endpoints for the dashboard.
+model comparison metrics, and model version history as JSON API endpoints
+for the dashboard.
 
 Run with: uvicorn api:app --reload
 Then visit http://127.0.0.1:8000/docs for interactive API docs.
@@ -125,8 +126,8 @@ def get_feature_importance():
 def get_model_metrics():
     """
     Returns the RMSE/MAE/R2 comparison table across all models and
-    horizons. Reads from model_metrics.json (generate with
-    save_model_metrics.py).
+    horizons. Reads from model_metrics.json, generated automatically
+    by train_model.py at the end of every training run.
     """
     try:
         with open("model_metrics.json", "r") as f:
@@ -135,5 +136,23 @@ def get_model_metrics():
     except FileNotFoundError:
         raise HTTPException(
             status_code=404,
-            detail="model_metrics.json not found - run save_model_metrics.py first"
+            detail="model_metrics.json not found - run train_model.py first"
+        )
+
+
+@app.get("/model-versions")
+def get_model_versions():
+    """
+    Returns the full version history for each model, straight from the
+    Hopsworks Model Registry. Reads from model_history.json (generate
+    with model_history.py).
+    """
+    try:
+        with open("model_history.json", "r") as f:
+            data = json.load(f)
+        return data
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail="model_history.json not found - run model_history.py first"
         )

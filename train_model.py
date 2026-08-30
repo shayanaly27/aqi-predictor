@@ -7,9 +7,12 @@ Training Pipeline
 4. Trains Ridge Regression, Random Forest, and XGBoost for each target
 5. Evaluates with RMSE, MAE, R2
 6. Saves the best model per horizon locally AND to the Hopsworks Model Registry
+7. Saves model_metrics.json from THIS run's real numbers - no manual typing.
+   Uses "day_1"/"day_2"/"day_3" keys to match what the frontend expects.
 """
 
 import os
+import json
 import pandas as pd
 import numpy as np
 import joblib
@@ -53,7 +56,6 @@ def connect_to_hopsworks():
 
 
 def load_data_from_feature_store():
-    """Fetch raw features from the Hopsworks Feature View."""
     project = connect_to_hopsworks()
     fs = project.get_feature_store()
 
@@ -129,6 +131,11 @@ def get_feature_columns():
 
 
 def train_and_evaluate(df, target_col, feature_cols):
+    """
+    Trains all 3 algorithms, returns the best one PLUS the full metrics
+    list for every algorithm (used to populate model_metrics.json for
+    the dashboard's comparison table - not just the winner).
+    """
     X = df[feature_cols]
     y = df[target_col]
 
@@ -137,6 +144,7 @@ def train_and_evaluate(df, target_col, feature_cols):
     y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
 
     results = {}
+    run_metrics_list = []
 
     models = {
         "Ridge Regression": Ridge(alpha=1.0),
@@ -153,6 +161,12 @@ def train_and_evaluate(df, target_col, feature_cols):
         r2 = r2_score(y_test, preds)
 
         results[name] = {"model": model, "rmse": rmse, "mae": mae, "r2": r2}
+        run_metrics_list.append({
+            "name": name,
+            "rmse": round(float(rmse), 2),
+            "mae": round(float(mae), 2),
+            "r2": round(float(r2), 3),
+        })
 
         print(f"  {name}: RMSE={rmse:.2f}, MAE={mae:.2f}, R2={r2:.3f}")
 
@@ -161,7 +175,9 @@ def train_and_evaluate(df, target_col, feature_cols):
     best_metrics = results[best_name]
     print(f"  -> Best model: {best_name}")
 
-    return best_name, best_model, best_metrics
+    run_metrics_list.sort(key=lambda m: m["rmse"])
+
+    return best_name, best_model, best_metrics, run_metrics_list
 
 
 def push_model_to_registry(project, model_path, target_col, best_name, metrics):
@@ -208,14 +224,39 @@ if __name__ == "__main__":
         "target_day3": "Day 3 (72h ahead)"
     }
 
+    all_run_metrics = {}
+
     for target_col, label in targets.items():
         print(f"\n=== Training models for {label} ===")
-        best_name, best_model, metrics = train_and_evaluate(df, target_col, feature_cols)
+        best_name, best_model, metrics, run_metrics_list = train_and_evaluate(df, target_col, feature_cols)
+        all_run_metrics[target_col] = run_metrics_list
 
         model_path = os.path.join(MODEL_DIR, f"{target_col}_model.pkl")
         joblib.dump(best_model, model_path)
         print(f"  ✅ Saved best model locally to {model_path}")
 
         push_model_to_registry(project, model_path, target_col, best_name, metrics)
+
+    # Save real metrics for the dashboard, generated from this actual run -
+    # not manually typed, so it always matches what's really deployed.
+    # Frontend expects keys "day_1"/"day_2"/"day_3", not "target_day1" etc.
+    KEY_MAP = {
+        "target_day1": "day_1",
+        "target_day2": "day_2",
+        "target_day3": "day_3",
+    }
+
+    dashboard_metrics = {}
+    for target_col, label in targets.items():
+        dashboard_key = KEY_MAP[target_col]
+        dashboard_metrics[dashboard_key] = {
+            "label": label,
+            "models": all_run_metrics[target_col],
+            "best_model": all_run_metrics[target_col][0]["name"] if all_run_metrics[target_col] else None,
+        }
+
+    with open("model_metrics.json", "w") as f:
+        json.dump(dashboard_metrics, f, indent=2)
+    print("\n✅ Saved model_metrics.json from this training run")
 
     print("\n✅ Training pipeline complete. All models saved locally and to the Model Registry.")

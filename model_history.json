@@ -1,0 +1,307 @@
+{
+  "target_day1": {
+    "model_name": "aqi_target_day1_model",
+    "versions": [
+      {
+        "version": 1,
+        "metrics": {
+          "mae": 9.435254246602115,
+          "r2": 0.6119859500199443,
+          "rmse": 13.458292200117105
+        },
+        "description": "Best model (XGBoost) for target_day1 AQI forecast",
+        "created": "1786560025000"
+      },
+      {
+        "version": 2,
+        "metrics": {
+          "mae": 9.27401993275075,
+          "r2": 0.6082812821335322,
+          "rmse": 13.261279530573162
+        },
+        "description": "Best model (XGBoost) for target_day1 AQI forecast",
+        "created": "1786983893000"
+      },
+      {
+        "version": 3,
+        "metrics": {
+          "mae": 9.27401993275075,
+          "r2": 0.6082812821335322,
+          "rmse": 13.261279530573162
+        },
+        "description": "Best model (XGBoost) for target_day1 AQI forecast",
+        "created": "1786984355000"
+      },
+      {
+        "version": 4,
+        "metrics": {
+          "mae": 9.463072395385977,
+          "r2": 0.5644121760517762,
+          "rmse": 14.272124714214327
+        },
+        "description": "Best model (XGBoost) for target_day1 AQI forecast",
+        "created": "1787157022000"
+      },
+      {
+        "version": 5,
+        "metrics": {
+          "mae": 9.40090478509258,
+          "r2": 0.5693864050354707,
+          "rmse": 14.200097428647476
+        },
+        "description": "Best model (XGBoost) for target_day1 AQI forecast",
+        "created": "1787256960000"
+      },
+      {
+        "version": 6,
+        "metrics": {
+          "mae": 8.745478398474386,
+          "r2": 0.5696207769257207,
+          "rmse": 13.333152419931134
+        },
+        "description": "Best model (XGBoost) for target_day1 AQI forecast",
+        "created": "1788094051000"
+      },
+      {
+        "version": 7,
+        "metrics": {
+          "mae": 8.757423234917548,
+          "r2": 0.5696855196713131,
+          "rmse": 13.33186663000981
+        },
+        "description": "Best model (XGBoost) for target_day1 AQI forecast",
+        "created": "1788097599000"
+      },
+      {
+        "version": 8,
+        "metrics": {
+          "mae": 8.810389550416314,
+          "r2": 0.5679902403380579,
+          "rmse": 13.356650266354311
+        },
+        "description": "Best model (XGBoost) for target_day1 AQI forecast",
+        "created": "1788122761000"
+      }
+    ],
+    "current_best": {
+      "version": 8,
+      "metrics": {
+        "mae": 8.810389550416314,
+        "r2": 0.5679902403380579,
+        "rmse": 13.356650266354311
+      },
+      "description": "Best model (XGBoost) for target_day1 AQI forecast",
+      "created": "1788122761000"
+    }
+  },
+  "target_day2": {
+    "model_name": "aqi_target_day2_model",
+    "versions": [
+      {
+        "version": 1,
+        "metrics": {
+          "mae": 12.6073906733687,
+          "r2": 0.3422957934661953,
+          "rmse": 17.2828826126329
+        },
+        "description": "Best model (XGBoost) for target_day2 AQI forecast",
+        "created": "1786559827000"
+      },
+      {
+        "version": 2,
+        "metrics": {
+          "mae": 12.6073906733687,
+          "r2": 0.3422957934661953,
+          "rmse": 17.2828826126329
+        },
+        "description": "Best model (XGBoost) for target_day2 AQI forecast",
+        "created": "1786560064000"
+      },
+      {
+        "version": 3,
+        "metrics": {
+          "mae": 12.781765757828909,
+          "r2": 0.34135285866826137,
+          "rmse": 17.213580668955693
+        },
+        "description": "Best model (Ridge Regression) for target_day2 AQI forecast",
+        "created": "1786983930000"
+      },
+      {
+        "version": 4,
+        "metrics": {
+          "mae": 12.781765757828909,
+          "r2": 0.34135285866826137,
+          "rmse": 17.213580668955693
+        },
+        "description": "Best model (Ridge Regression) for target_day2 AQI forecast",
+        "created": "1786984391000"
+      },
+      {
+        "version": 5,
+        "metrics": {
+          "mae": 12.301789716628063,
+          "r2": 0.34127366260004843,
+          "rmse": 17.564987957741238
+        },
+        "description": "Best model (XGBoost) for target_day2 AQI forecast",
+        "created": "1787157062000"
+      },
+      {
+        "version": 6,
+        "metrics": {
+          "mae": 12.38663556988636,
+          "r2": 0.3404924859843943,
+          "rmse": 17.541834173637877
+        },
+        "description": "Best model (XGBoost) for target_day2 AQI forecast",
+        "created": "1787256994000"
+      },
+      {
+        "version": 7,
+        "metrics": {
+          "mae": 11.246362385314546,
+          "r2": 0.3578285568372094,
+          "rmse": 16.24023295078852
+        },
+        "description": "Best model (XGBoost) for target_day2 AQI forecast",
+        "created": "1788094088000"
+      },
+      {
+        "version": 8,
+        "metrics": {
+          "mae": 11.198470849663448,
+          "r2": 0.35867222638335994,
+          "rmse": 16.2179424442313
+        },
+        "description": "Best model (XGBoost) for target_day2 AQI forecast",
+        "created": "1788097627000"
+      },
+      {
+        "version": 9,
+        "metrics": {
+          "mae": 11.194947691365007,
+          "r2": 0.3564351429841137,
+          "rmse": 16.23421139314639
+        },
+        "description": "Best model (XGBoost) for target_day2 AQI forecast",
+        "created": "1788122803000"
+      }
+    ],
+    "current_best": {
+      "version": 9,
+      "metrics": {
+        "mae": 11.194947691365007,
+        "r2": 0.3564351429841137,
+        "rmse": 16.23421139314639
+      },
+      "description": "Best model (XGBoost) for target_day2 AQI forecast",
+      "created": "1788122803000"
+    }
+  },
+  "target_day3": {
+    "model_name": "aqi_target_day3_model",
+    "versions": [
+      {
+        "version": 1,
+        "metrics": {
+          "mae": 13.554837239677902,
+          "r2": 0.2854442773696485,
+          "rmse": 17.947869037474817
+        },
+        "description": "Best model (Ridge Regression) for target_day3 AQI forecast",
+        "created": "1786559864000"
+      },
+      {
+        "version": 2,
+        "metrics": {
+          "mae": 13.554837239677902,
+          "r2": 0.2854442773696485,
+          "rmse": 17.947869037474817
+        },
+        "description": "Best model (Ridge Regression) for target_day3 AQI forecast",
+        "created": "1786560101000"
+      },
+      {
+        "version": 3,
+        "metrics": {
+          "mae": 13.330069396854752,
+          "r2": 0.2995502762007666,
+          "rmse": 17.76061485870739
+        },
+        "description": "Best model (Ridge Regression) for target_day3 AQI forecast",
+        "created": "1786983970000"
+      },
+      {
+        "version": 4,
+        "metrics": {
+          "mae": 13.330069396854752,
+          "r2": 0.2995502762007666,
+          "rmse": 17.76061485870739
+        },
+        "description": "Best model (Ridge Regression) for target_day3 AQI forecast",
+        "created": "1786984428000"
+      },
+      {
+        "version": 5,
+        "metrics": {
+          "mae": 13.399896318434166,
+          "r2": 0.27465851553455456,
+          "rmse": 18.394245204804687
+        },
+        "description": "Best model (Ridge Regression) for target_day3 AQI forecast",
+        "created": "1787157098000"
+      },
+      {
+        "version": 6,
+        "metrics": {
+          "mae": 13.086586247093509,
+          "r2": 0.2808252926106469,
+          "rmse": 18.351517433727434
+        },
+        "description": "Best model (XGBoost) for target_day3 AQI forecast",
+        "created": "1787257028000"
+      },
+      {
+        "version": 7,
+        "metrics": {
+          "mae": 12.47225575767141,
+          "r2": 0.26431308237445184,
+          "rmse": 17.145156854972463
+        },
+        "description": "Best model (Ridge Regression) for target_day3 AQI forecast",
+        "created": "1788094130000"
+      },
+      {
+        "version": 8,
+        "metrics": {
+          "mae": 12.473283783117116,
+          "r2": 0.26428045680554946,
+          "rmse": 17.146481523222928
+        },
+        "description": "Best model (Ridge Regression) for target_day3 AQI forecast",
+        "created": "1788097654000"
+      },
+      {
+        "version": 9,
+        "metrics": {
+          "mae": 12.476393531360056,
+          "r2": 0.26421393672334126,
+          "rmse": 17.14960495378276
+        },
+        "description": "Best model (Ridge Regression) for target_day3 AQI forecast",
+        "created": "1788122842000"
+      }
+    ],
+    "current_best": {
+      "version": 9,
+      "metrics": {
+        "mae": 12.476393531360056,
+        "r2": 0.26421393672334126,
+        "rmse": 17.14960495378276
+      },
+      "description": "Best model (Ridge Regression) for target_day3 AQI forecast",
+      "created": "1788122842000"
+    }
+  }
+}

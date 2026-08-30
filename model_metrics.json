@@ -3,28 +3,22 @@
     "label": "Day 1 (24h ahead)",
     "models": [
       {
-        "name": "Ridge Regression",
-        "rmse": 15.95,
-        "mae": 10.26,
-        "r2": 0.457
+        "name": "XGBoost",
+        "rmse": 13.36,
+        "mae": 8.81,
+        "r2": 0.568
       },
       {
         "name": "Random Forest",
-        "rmse": 15.25,
-        "mae": 10.05,
-        "r2": 0.503
+        "rmse": 14.11,
+        "mae": 9.18,
+        "r2": 0.518
       },
       {
-        "name": "XGBoost",
-        "rmse": 14.2,
-        "mae": 9.4,
-        "r2": 0.569
-      },
-      {
-        "name": "Neural Network",
-        "rmse": 16.81,
-        "mae": 10.31,
-        "r2": 0.398
+        "name": "Ridge Regression",
+        "rmse": 15.1,
+        "mae": 9.47,
+        "r2": 0.448
       }
     ],
     "best_model": "XGBoost"
@@ -33,28 +27,22 @@
     "label": "Day 2 (48h ahead)",
     "models": [
       {
-        "name": "Ridge Regression",
-        "rmse": 18.03,
-        "mae": 12.85,
-        "r2": 0.303
+        "name": "XGBoost",
+        "rmse": 16.23,
+        "mae": 11.19,
+        "r2": 0.356
       },
       {
         "name": "Random Forest",
-        "rmse": 17.85,
-        "mae": 12.63,
-        "r2": 0.317
+        "rmse": 16.61,
+        "mae": 11.49,
+        "r2": 0.327
       },
       {
-        "name": "XGBoost",
-        "rmse": 17.54,
-        "mae": 12.39,
-        "r2": 0.34
-      },
-      {
-        "name": "Neural Network",
-        "rmse": 18.92,
-        "mae": 13.04,
-        "r2": 0.238
+        "name": "Ridge Regression",
+        "rmse": 16.74,
+        "mae": 11.88,
+        "r2": 0.316
       }
     ],
     "best_model": "XGBoost"
@@ -64,29 +52,23 @@
     "models": [
       {
         "name": "Ridge Regression",
-        "rmse": 18.41,
-        "mae": 13.43,
-        "r2": 0.276
+        "rmse": 17.15,
+        "mae": 12.48,
+        "r2": 0.264
       },
       {
         "name": "Random Forest",
-        "rmse": 18.52,
-        "mae": 13.24,
-        "r2": 0.268
+        "rmse": 17.48,
+        "mae": 12.38,
+        "r2": 0.236
       },
       {
         "name": "XGBoost",
-        "rmse": 18.35,
-        "mae": 13.09,
-        "r2": 0.281
-      },
-      {
-        "name": "Neural Network",
-        "rmse": 19.76,
-        "mae": 14.06,
-        "r2": 0.17
+        "rmse": 17.49,
+        "mae": 12.33,
+        "r2": 0.235
       }
     ],
-    "best_model": "XGBoost"
+    "best_model": "Ridge Regression"
   }
 }
