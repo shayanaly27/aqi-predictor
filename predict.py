@@ -1,10 +1,10 @@
 """
 Prediction Script
-Takes the most recent data (live + enough history for lag/rolling features)
-from the Hopsworks Feature Store, engineers the same features used in
-training, loads the 3 saved models, and outputs a clean 3-day AQI forecast.
+Takes the most recent data from the Hopsworks Feature Store, engineers the
+same features used in training, loads the 3 models FROM THE HOPSWORKS MODEL
+REGISTRY (not local files), and outputs a clean 3-day AQI forecast.
 
-This is what your API / dashboard will call.
+This is what your API / dashboard calls.
 """
 
 import os
@@ -16,8 +16,7 @@ load_dotenv()
 
 import hopsworks
 
-DATA_FILE = "aqi_training_data.csv"          # fallback only
-MODEL_DIR = "models"
+DATA_FILE = "aqi_training_data.csv"          # fallback only, if Hopsworks is down
 
 HOPSWORKS_API_KEY = os.environ.get("HOPSWORKS_API_KEY")
 HOPSWORKS_PROJECT = "aqi_predictor_ksa"
@@ -41,10 +40,8 @@ def connect_to_hopsworks():
     return project
 
 
-def load_recent_data_from_feature_store(hours_needed=72):
-    project = connect_to_hopsworks()
+def load_recent_data_from_feature_store(project, hours_needed=72):
     fs = project.get_feature_store()
-
     fv = fs.get_feature_view(name=FEATURE_VIEW_NAME, version=FEATURE_VIEW_VERSION)
     df = fv.get_batch_data()
 
@@ -69,11 +66,18 @@ def load_recent_data_from_csv(hours_needed=72):
 
 
 def load_recent_data(hours_needed=72):
+    """
+    Returns (project, df). project is None if we fell back to CSV -
+    downstream code uses this to decide whether it can also load models
+    from the registry, or needs a local models/ fallback too.
+    """
     try:
-        return load_recent_data_from_feature_store(hours_needed)
+        project = connect_to_hopsworks()
+        df = load_recent_data_from_feature_store(project, hours_needed)
+        return project, df
     except Exception as e:
         print(f"  -> Feature Store read failed: {e}")
-        return load_recent_data_from_csv(hours_needed)
+        return None, load_recent_data_from_csv(hours_needed)
 
 
 def engineer_features_for_prediction(df):
@@ -125,10 +129,32 @@ def aqi_category(aqi_value):
         return "Hazardous"
 
 
-def predict_next_3_days():
-    df = load_recent_data()
-    df = engineer_features_for_prediction(df)
+def load_model_from_registry(project, target_col):
+    """Downloads the LATEST version of the model from Hopsworks Model Registry."""
+    mr = project.get_model_registry()
 
+    # get_models() returns every version of this model name - we want the
+    # highest version number, since that's the most recently trained one
+    all_versions = mr.get_models(name=f"aqi_{target_col}_model")
+    if not all_versions:
+        raise ValueError(f"No model found in registry for aqi_{target_col}_model")
+
+    latest = max(all_versions, key=lambda m: m.version)
+    print(f"  -> Loading aqi_{target_col}_model version {latest.version}")
+
+    model_dir = latest.download()
+    model_path = os.path.join(model_dir, f"{target_col}_model.pkl")
+    return joblib.load(model_path)
+
+
+def load_model_from_local(target_col):
+    model_path = os.path.join("models", f"{target_col}_model.pkl")
+    return joblib.load(model_path)
+
+
+def predict_next_3_days():
+    project, df = load_recent_data()
+    df = engineer_features_for_prediction(df)
     df = df.dropna().reset_index(drop=True)
 
     if len(df) == 0:
@@ -140,8 +166,14 @@ def predict_next_3_days():
 
     predictions = {}
     for day_num, target_name in [(1, "target_day1"), (2, "target_day2"), (3, "target_day3")]:
-        model_path = os.path.join(MODEL_DIR, f"{target_name}_model.pkl")
-        model = joblib.load(model_path)
+        try:
+            if project is not None:
+                model = load_model_from_registry(project, target_name)
+            else:
+                model = load_model_from_local(target_name)
+        except Exception as e:
+            print(f"  -> Registry load failed for {target_name}, trying local fallback: {e}")
+            model = load_model_from_local(target_name)
 
         pred_value = model.predict(X_latest)[0]
         pred_value = round(float(pred_value), 1)

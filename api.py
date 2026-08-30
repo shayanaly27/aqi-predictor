@@ -7,14 +7,24 @@ Run with: uvicorn api:app --reload
 Then visit http://127.0.0.1:8000/docs for interactive API docs.
 """
 
+import os
 import json
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from dotenv import load_dotenv
+load_dotenv()
+
+import hopsworks
+
 from predict import predict_next_3_days
 
-DATA_FILE = "aqi_training_data.csv"
+HOPSWORKS_API_KEY = os.environ.get("HOPSWORKS_API_KEY")
+HOPSWORKS_PROJECT = "aqi_predictor_ksa"
+HOPSWORKS_HOST = "eu-west.cloud.hopsworks.ai"
+FEATURE_VIEW_NAME = "aqi_feature_view"
+FEATURE_VIEW_VERSION = 1
 
 app = FastAPI(
     title="Karachi AQI Prediction API",
@@ -29,6 +39,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def connect_to_hopsworks():
+    cert_dir = os.path.join(os.getcwd(), "hopsworks_certs")
+    os.makedirs(cert_dir, exist_ok=True)
+    return hopsworks.login(
+        project=HOPSWORKS_PROJECT,
+        host=HOPSWORKS_HOST,
+        port=443,
+        api_key_value=HOPSWORKS_API_KEY,
+        cert_folder=cert_dir,
+    )
 
 
 @app.get("/")
@@ -54,11 +76,14 @@ def health_check():
 def get_history(days: int = 14):
     """
     Returns daily-averaged AQI for the last N days, for the dashboard's
-    trend chart. Reads the local training CSV - doesn't need to be
-    live-live, just recent.
+    trend chart. Reads directly from the Hopsworks Feature Store - no CSV.
     """
     try:
-        df = pd.read_csv(DATA_FILE)
+        project = connect_to_hopsworks()
+        fs = project.get_feature_store()
+        fv = fs.get_feature_view(name=FEATURE_VIEW_NAME, version=FEATURE_VIEW_VERSION)
+        df = fv.get_batch_data()
+
         df["timestamp"] = pd.to_datetime(df["timestamp"], format="mixed")
         df = df.sort_values("timestamp")
 
