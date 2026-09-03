@@ -5,9 +5,15 @@ same features used in training, loads the 3 models FROM THE HOPSWORKS MODEL
 REGISTRY (not local files), and outputs a clean 3-day AQI forecast.
 
 This is what your API / dashboard calls.
+
+PERFORMANCE NOTE: Hopsworks login, model downloads, and feature-store reads
+are expensive (network + I/O). This version caches all three in memory so
+they only happen once per process (or once per TTL window for live data),
+instead of on every single prediction request.
 """
 
 import os
+import time
 import pandas as pd
 import joblib
 
@@ -25,6 +31,20 @@ HOPSWORKS_HOST = "eu-west.cloud.hopsworks.ai"
 FEATURE_VIEW_NAME = "aqi_feature_view"
 FEATURE_VIEW_VERSION = 1
 
+TARGET_COLS = ["target_day1", "target_day2", "target_day3"]
+
+# How long cached "recent data" from the Feature Store stays fresh before
+# we re-fetch. The live pipeline only writes a new row once an hour, so
+# there's no benefit to hitting Hopsworks more often than this.
+RECENT_DATA_TTL_SECONDS = 5 * 60
+
+# ─────────────────────────────────────────────────────────────
+# In-memory caches (module-level, live for the lifetime of the process)
+# ─────────────────────────────────────────────────────────────
+_project_cache = {"project": None}
+_model_cache = {}  # target_col -> loaded model object
+_recent_data_cache = {"df": None, "fetched_at": 0.0}
+
 
 def connect_to_hopsworks():
     cert_dir = os.path.join(os.getcwd(), "hopsworks_certs")
@@ -38,6 +58,30 @@ def connect_to_hopsworks():
         cert_folder=cert_dir,
     )
     return project
+
+
+def get_cached_project():
+    """
+    Returns a cached Hopsworks project connection, logging in only once
+    per process. If a previous connection is known-bad, this will retry.
+    Returns None if the connection cannot be established.
+    """
+    if _project_cache["project"] is not None:
+        return _project_cache["project"]
+
+    try:
+        project = connect_to_hopsworks()
+        _project_cache["project"] = project
+        print("✅ Hopsworks connection established and cached")
+        return project
+    except Exception as e:
+        print(f"  -> Hopsworks login failed: {e}")
+        return None
+
+
+def invalidate_project_cache():
+    """Call this if a cached connection turns out to be dead mid-use."""
+    _project_cache["project"] = None
 
 
 def load_recent_data_from_feature_store(project, hours_needed=72):
@@ -72,12 +116,36 @@ def load_recent_data(hours_needed=72):
     from the registry, or needs a local models/ fallback too.
     """
     try:
-        project = connect_to_hopsworks()
+        project = get_cached_project()
+        if project is None:
+            raise RuntimeError("no cached/live Hopsworks connection")
         df = load_recent_data_from_feature_store(project, hours_needed)
         return project, df
     except Exception as e:
         print(f"  -> Feature Store read failed: {e}")
+        invalidate_project_cache()
         return None, load_recent_data_from_csv(hours_needed)
+
+
+def load_recent_data_cached(hours_needed=72, ttl_seconds=RECENT_DATA_TTL_SECONDS):
+    """
+    TTL-cached wrapper around load_recent_data(). Avoids hitting the
+    Feature Store on every single API request - the underlying data only
+    changes once an hour anyway (the feature pipeline's schedule).
+    """
+    now = time.time()
+    cached_df = _recent_data_cache["df"]
+    age = now - _recent_data_cache["fetched_at"]
+
+    if cached_df is not None and age < ttl_seconds:
+        # Still need a project handle for model loading downstream, so
+        # re-fetch the cached connection (cheap - no network call).
+        return get_cached_project(), cached_df
+
+    project, df = load_recent_data(hours_needed)
+    _recent_data_cache["df"] = df
+    _recent_data_cache["fetched_at"] = now
+    return project, df
 
 
 def engineer_features_for_prediction(df):
@@ -133,8 +201,6 @@ def load_model_from_registry(project, target_col):
     """Downloads the LATEST version of the model from Hopsworks Model Registry."""
     mr = project.get_model_registry()
 
-    # get_models() returns every version of this model name - we want the
-    # highest version number, since that's the most recently trained one
     all_versions = mr.get_models(name=f"aqi_{target_col}_model")
     if not all_versions:
         raise ValueError(f"No model found in registry for aqi_{target_col}_model")
@@ -152,8 +218,50 @@ def load_model_from_local(target_col):
     return joblib.load(model_path)
 
 
+def get_cached_model(project, target_col):
+    """
+    Returns a model from the in-memory cache if we already loaded it this
+    process. Otherwise downloads from the registry (or falls back to the
+    local models/ folder) and caches the result. This is the single
+    biggest speedup: model downloads are the slowest part of a cold
+    /predict call, and the model doesn't change until the next training
+    run - there's no reason to redownload it on every request.
+    """
+    if target_col in _model_cache:
+        return _model_cache[target_col]
+
+    try:
+        if project is not None:
+            model = load_model_from_registry(project, target_col)
+        else:
+            raise RuntimeError("no Hopsworks connection - using local fallback")
+    except Exception as e:
+        print(f"  -> Registry load failed for {target_col}, trying local fallback: {e}")
+        model = load_model_from_local(target_col)
+
+    _model_cache[target_col] = model
+    return model
+
+
+def preload():
+    """
+    Call this once at API startup (see api.py's startup event) so the
+    FIRST real request isn't the one paying for Hopsworks login + all
+    3 model downloads. Safe to call multiple times - cached work is
+    skipped automatically.
+    """
+    print("Preloading Hopsworks connection and models...")
+    project = get_cached_project()
+    for target_col in TARGET_COLS:
+        try:
+            get_cached_model(project, target_col)
+        except Exception as e:
+            print(f"  ⚠️ Could not preload {target_col}: {e}")
+    print("✅ Preload complete")
+
+
 def predict_next_3_days():
-    project, df = load_recent_data()
+    project, df = load_recent_data_cached()
     df = engineer_features_for_prediction(df)
     df = df.dropna().reset_index(drop=True)
 
@@ -166,14 +274,7 @@ def predict_next_3_days():
 
     predictions = {}
     for day_num, target_name in [(1, "target_day1"), (2, "target_day2"), (3, "target_day3")]:
-        try:
-            if project is not None:
-                model = load_model_from_registry(project, target_name)
-            else:
-                model = load_model_from_local(target_name)
-        except Exception as e:
-            print(f"  -> Registry load failed for {target_name}, trying local fallback: {e}")
-            model = load_model_from_local(target_name)
+        model = get_cached_model(project, target_name)
 
         pred_value = model.predict(X_latest)[0]
         pred_value = round(float(pred_value), 1)

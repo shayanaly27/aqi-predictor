@@ -6,9 +6,17 @@ for the dashboard.
 
 Run with: uvicorn api:app --reload
 Then visit http://127.0.0.1:8000/docs for interactive API docs.
+
+PERFORMANCE NOTE: Hopsworks login + model downloads now happen ONCE at
+startup (see the startup event below), and /history is TTL-cached, since
+the underlying feature store data only changes on the hourly pipeline
+schedule anyway. This is what fixes the "takes forever to load" problem -
+previously every /predict call re-logged into Hopsworks and re-downloaded
+all 3 models from scratch.
 """
 
 import os
+import time
 import json
 import pandas as pd
 from fastapi import FastAPI, HTTPException
@@ -19,13 +27,25 @@ load_dotenv()
 
 import hopsworks
 
-from predict import predict_next_3_days
+from predict import predict_next_3_days, get_cached_project, preload
 
 HOPSWORKS_API_KEY = os.environ.get("HOPSWORKS_API_KEY")
 HOPSWORKS_PROJECT = "aqi_predictor_ksa"
 HOPSWORKS_HOST = "eu-west.cloud.hopsworks.ai"
 FEATURE_VIEW_NAME = "aqi_feature_view"
 FEATURE_VIEW_VERSION = 1
+
+# Comma-separated list of allowed frontend origins, e.g.
+#   ALLOWED_ORIGINS=https://your-dashboard.vercel.app,http://localhost:3000
+# Falls back to "*" for local development if not set.
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "*")
+origins = ["*"] if ALLOWED_ORIGINS == "*" else [o.strip() for o in ALLOWED_ORIGINS.split(",")]
+
+# How long the /history response stays cached before re-querying the
+# Feature Store. The live pipeline writes a new row once an hour, so
+# there's no point recomputing this on every dashboard load.
+HISTORY_CACHE_TTL_SECONDS = 5 * 60
+_history_cache = {"days": None, "result": None, "fetched_at": 0.0}
 
 app = FastAPI(
     title="Karachi AQI Prediction API",
@@ -35,11 +55,26 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+def on_startup():
+    """
+    Warms up the Hopsworks connection and downloads all 3 models ONCE
+    when the API process starts, instead of on the first (or every)
+    request. If this fails (e.g. Hopsworks briefly unreachable at boot),
+    we don't crash the app - predict.py's per-call fallback logic will
+    still try again and fall back to local files as before.
+    """
+    try:
+        preload()
+    except Exception as e:
+        print(f"⚠️ Startup preload failed, will retry lazily on first request: {e}")
 
 
 def connect_to_hopsworks():
@@ -77,10 +112,21 @@ def health_check():
 def get_history(days: int = 14):
     """
     Returns daily-averaged AQI for the last N days, for the dashboard's
-    trend chart. Reads directly from the Hopsworks Feature Store - no CSV.
+    trend chart. Reads from the Hopsworks Feature Store, cached for
+    HISTORY_CACHE_TTL_SECONDS so repeated dashboard loads don't each
+    trigger a fresh Feature Store query.
     """
+    now = time.time()
+    cache_fresh = (
+        _history_cache["result"] is not None
+        and _history_cache["days"] == days
+        and (now - _history_cache["fetched_at"]) < HISTORY_CACHE_TTL_SECONDS
+    )
+    if cache_fresh:
+        return _history_cache["result"]
+
     try:
-        project = connect_to_hopsworks()
+        project = get_cached_project() or connect_to_hopsworks()
         fs = project.get_feature_store()
         fv = fs.get_feature_view(name=FEATURE_VIEW_NAME, version=FEATURE_VIEW_VERSION)
         df = fv.get_batch_data()
@@ -98,7 +144,13 @@ def get_history(days: int = 14):
             for date, value in daily.items()
             if not pd.isna(value)
         ]
-        return {"days": days, "history": result}
+        response = {"days": days, "history": result}
+
+        _history_cache["days"] = days
+        _history_cache["result"] = response
+        _history_cache["fetched_at"] = now
+
+        return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"History fetch failed: {str(e)}")
 
