@@ -7,12 +7,11 @@ for the dashboard.
 Run with: uvicorn api:app --reload
 Then visit http://127.0.0.1:8000/docs for interactive API docs.
 
-PERFORMANCE NOTE: Hopsworks login + model downloads now happen ONCE at
+PERFORMANCE NOTE: Hopsworks login + model downloads happen ONCE at
 startup (see the startup event below), and /history is TTL-cached, since
 the underlying feature store data only changes on the hourly pipeline
-schedule anyway. This is what fixes the "takes forever to load" problem -
-previously every /predict call re-logged into Hopsworks and re-downloaded
-all 3 models from scratch.
+schedule anyway. /predict accepts ?refresh=true to bypass all caches for
+a genuinely fresh forecast (used by the dashboard's refresh button).
 """
 
 import os
@@ -95,9 +94,15 @@ def root():
 
 
 @app.get("/predict")
-def get_prediction():
+def get_prediction(refresh: bool = False):
+    """
+    Returns the 3-day AQI forecast. Normally served from in-memory cache
+    (fast). Pass ?refresh=true to bypass the cache and force a genuinely
+    fresh pull from Hopsworks - this is what the dashboard's
+    "Fetch Latest Data" button calls.
+    """
     try:
-        result = predict_next_3_days()
+        result = predict_next_3_days(force_refresh=refresh)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")

@@ -8,8 +8,10 @@ This is what your API / dashboard calls.
 
 PERFORMANCE NOTE: Hopsworks login, model downloads, and feature-store reads
 are expensive (network + I/O). This version caches all three in memory so
-they only happen once per process (or once per TTL window for live data),
-instead of on every single prediction request.
+they only happen once per process (or once per TTL window), instead of on
+every single prediction request. Cached models expire after
+MODEL_CACHE_TTL_SECONDS so the API picks up newly-trained versions from
+the daily training pipeline without needing a manual restart.
 """
 
 import os
@@ -38,11 +40,17 @@ TARGET_COLS = ["target_day1", "target_day2", "target_day3"]
 # there's no benefit to hitting Hopsworks more often than this.
 RECENT_DATA_TTL_SECONDS = 5 * 60
 
+# How long a cached model stays in memory before we re-check the registry
+# for a newer version. The daily training pipeline can produce a new
+# version at any time - without this TTL, a long-running server process
+# would keep serving a stale model forever.
+MODEL_CACHE_TTL_SECONDS = 60 * 60
+
 # ─────────────────────────────────────────────────────────────
 # In-memory caches (module-level, live for the lifetime of the process)
 # ─────────────────────────────────────────────────────────────
 _project_cache = {"project": None}
-_model_cache = {}  # target_col -> loaded model object
+_model_cache = {}  # target_col -> (model, loaded_at)
 _recent_data_cache = {"df": None, "fetched_at": 0.0}
 
 
@@ -218,17 +226,20 @@ def load_model_from_local(target_col):
     return joblib.load(model_path)
 
 
-def get_cached_model(project, target_col):
+def get_cached_model(project, target_col, force_refresh=False):
     """
-    Returns a model from the in-memory cache if we already loaded it this
-    process. Otherwise downloads from the registry (or falls back to the
-    local models/ folder) and caches the result. This is the single
-    biggest speedup: model downloads are the slowest part of a cold
-    /predict call, and the model doesn't change until the next training
-    run - there's no reason to redownload it on every request.
+    Returns a model from the in-memory cache if it's still within
+    MODEL_CACHE_TTL_SECONDS. Otherwise (or if force_refresh=True)
+    re-checks the registry for the latest version - this is what lets
+    the API pick up newly-trained models from the daily pipeline without
+    needing a manual restart.
     """
-    if target_col in _model_cache:
-        return _model_cache[target_col]
+    now = time.time()
+    cached = _model_cache.get(target_col)
+    if not force_refresh and cached is not None:
+        model, loaded_at = cached
+        if now - loaded_at < MODEL_CACHE_TTL_SECONDS:
+            return model
 
     try:
         if project is not None:
@@ -239,7 +250,7 @@ def get_cached_model(project, target_col):
         print(f"  -> Registry load failed for {target_col}, trying local fallback: {e}")
         model = load_model_from_local(target_col)
 
-    _model_cache[target_col] = model
+    _model_cache[target_col] = (model, now)
     return model
 
 
@@ -260,8 +271,18 @@ def preload():
     print("✅ Preload complete")
 
 
-def predict_next_3_days():
-    project, df = load_recent_data_cached()
+def predict_next_3_days(force_refresh: bool = False):
+    """
+    Set force_refresh=True to bypass both the recent-data cache and the
+    model cache - used by the dashboard's "Fetch Latest Data" button so
+    it actually pulls fresh data instead of returning the same cached
+    response.
+    """
+    if force_refresh:
+        project, df = load_recent_data()
+    else:
+        project, df = load_recent_data_cached()
+
     df = engineer_features_for_prediction(df)
     df = df.dropna().reset_index(drop=True)
 
@@ -274,7 +295,7 @@ def predict_next_3_days():
 
     predictions = {}
     for day_num, target_name in [(1, "target_day1"), (2, "target_day2"), (3, "target_day3")]:
-        model = get_cached_model(project, target_name)
+        model = get_cached_model(project, target_name, force_refresh=force_refresh)
 
         pred_value = model.predict(X_latest)[0]
         pred_value = round(float(pred_value), 1)
