@@ -1,9 +1,14 @@
 """
-Step 2 (v3): Feature Pipeline - fetches live weather + AQI from Open-Meteo
+Step 2 (v4): Feature Pipeline - fetches live weather + AQI from Open-Meteo
 and inserts DIRECTLY into the Hopsworks Feature Store. No CSV, no git commit
-of data - Hopsworks is the only persistence layer now. Includes retry logic
-since the Hopsworks materialization-job launch occasionally drops the
-connection from GitHub Actions' network (transient, not a code bug).
+of data - Hopsworks is the only persistence layer now.
+
+Uses write_options={"wait_for_job": True} so each insert waits for and
+confirms the background materialization job actually completed, rather
+than firing-and-forgetting via the async Kafka queue. This surfaces
+materialization failures as a visible failed GitHub Action run instead of
+silently leaving fresh data unmaterialized in the Feature View - a known,
+widely-reported Hopsworks free-tier issue (see project report, Section 11).
 """
 
 import os
@@ -102,21 +107,23 @@ def connect_to_hopsworks():
 
 def insert_with_retry(aqi_fg, df, max_retries=3, delay_seconds=15):
     """
-    Hopsworks occasionally drops the connection when launching the
-    background materialization job right after an insert (a transient
-    infra issue, not something wrong with our data or code). Retry a
-    few times before giving up - one missed hourly row is fine, but no
-    need to fail the whole CI run on a network blip if we don't have to.
+    wait_for_job=True makes this call block until the offline
+    materialization job actually finishes (or fails) - so a materialization
+    failure raises here and gets retried, instead of silently leaving the
+    row stuck unmaterialized while insert() reports success. Retries a
+    few times before giving up, since Hopsworks' free-tier materialization
+    service is known to fail or stall under load (widely reported across
+    the cohort - see report, Section 11).
     """
     for attempt in range(1, max_retries + 1):
         try:
-            aqi_fg.insert(df, write_options={"wait_for_job": False})
-            print("✅ Row inserted directly into Hopsworks Feature Store (no CSV involved)")
+            aqi_fg.insert(df, write_options={"wait_for_job": True})
+            print("✅ Row inserted AND materialized into Hopsworks Feature Store")
             return
         except Exception as e:
             print(f"  ⚠️ Insert attempt {attempt}/{max_retries} failed: {e}")
             if attempt == max_retries:
-                print("  ❌ All retry attempts failed - this hourly row will be missing.")
+                print("  ❌ All retry attempts failed - this hourly row may not be materialized.")
                 raise
             time.sleep(delay_seconds)
 
@@ -136,5 +143,5 @@ if __name__ == "__main__":
 
     aqi_fg = fs.get_feature_group(name=FEATURE_GROUP_NAME, version=FEATURE_GROUP_VERSION)
 
-    print("Inserting row into Feature Group...")
+    print("Inserting row into Feature Group (waiting for materialization)...")
     insert_with_retry(aqi_fg, df)
