@@ -1,18 +1,18 @@
 """
-Step 2 (v4): Feature Pipeline - fetches live weather + AQI from Open-Meteo
+Step 2 (v5): Feature Pipeline - fetches live weather + AQI from Open-Meteo
 and inserts DIRECTLY into the Hopsworks Feature Store. No CSV, no git commit
 of data - Hopsworks is the only persistence layer now.
 
-Uses write_options={"wait_for_job": True} so each insert waits for and
-confirms the background materialization job actually completed, rather
-than firing-and-forgetting via the async Kafka queue. This surfaces
-materialization failures as a visible failed GitHub Action run instead of
-silently leaving fresh data unmaterialized in the Feature View - a known,
-widely-reported Hopsworks free-tier issue (see project report, Section 11).
+Uses write_options={"wait_for_job": True} on a SINGLE attempt (no retry
+loop) so a materialization failure is surfaced clearly as a failed GitHub
+Action run, but doesn't multiply into a 20+ minute job by retrying a
+service-side failure 3 times in a row. Hopsworks' free-tier materialization
+service is known to intermittently fail or stall under load - this is a
+widely-reported, cohort-wide platform issue (see project report,
+Section 11), not something retries on our end can reliably fix.
 """
 
 import os
-import time
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -105,27 +105,22 @@ def connect_to_hopsworks():
     return project
 
 
-def insert_with_retry(aqi_fg, df, max_retries=3, delay_seconds=15):
+def insert_row(aqi_fg, df):
     """
-    wait_for_job=True makes this call block until the offline
-    materialization job actually finishes (or fails) - so a materialization
-    failure raises here and gets retried, instead of silently leaving the
-    row stuck unmaterialized while insert() reports success. Retries a
-    few times before giving up, since Hopsworks' free-tier materialization
-    service is known to fail or stall under load (widely reported across
-    the cohort - see report, Section 11).
+    Single attempt, wait_for_job=True: confirms materialization actually
+    succeeded (visible failure in CI if not) without retrying a service-
+    side failure 3x and ballooning an hourly job to 25+ minutes. If this
+    fails, the row is still staged (Kafka insert succeeds even when
+    materialization does) - the next hourly run's materialization attempt
+    will pick up the backlog once Hopsworks' service recovers.
     """
-    for attempt in range(1, max_retries + 1):
-        try:
-            aqi_fg.insert(df, write_options={"wait_for_job": True})
-            print("✅ Row inserted AND materialized into Hopsworks Feature Store")
-            return
-        except Exception as e:
-            print(f"  ⚠️ Insert attempt {attempt}/{max_retries} failed: {e}")
-            if attempt == max_retries:
-                print("  ❌ All retry attempts failed - this hourly row may not be materialized.")
-                raise
-            time.sleep(delay_seconds)
+    try:
+        aqi_fg.insert(df, write_options={"wait_for_job": True})
+        print("✅ Row inserted AND materialized into Hopsworks Feature Store")
+    except Exception as e:
+        print(f"  ⚠️ Materialization failed this run (Hopsworks-side): {e}")
+        print("  -> Row is still staged; a future successful materialization run will pick it up.")
+        raise
 
 
 if __name__ == "__main__":
@@ -143,5 +138,5 @@ if __name__ == "__main__":
 
     aqi_fg = fs.get_feature_group(name=FEATURE_GROUP_NAME, version=FEATURE_GROUP_VERSION)
 
-    print("Inserting row into Feature Group (waiting for materialization)...")
-    insert_with_retry(aqi_fg, df)
+    print("Inserting row into Feature Group (waiting for materialization, single attempt)...")
+    insert_row(aqi_fg, df)
