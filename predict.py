@@ -389,6 +389,16 @@ def predict_next_3_days(force_refresh: bool = False):
     df["timestamp"] = pd.to_datetime(df["timestamp"], format="mixed")
     df = df.drop_duplicates(subset="timestamp").sort_values("timestamp").reset_index(drop=True)
 
+    # Hopsworks reads integer columns back as pandas' nullable "Int64"
+    # extension dtype; the live Open-Meteo row builds plain numeric
+    # columns. Concatenating the two can silently collapse a column to
+    # generic "object" dtype, which XGBoost then rejects outright. Forcing
+    # every feature column to a standard numeric dtype here guarantees a
+    # clean numeric frame regardless of which side introduced the mismatch.
+    for col in df.columns:
+        if col != "timestamp":
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
     df = engineer_features_for_prediction(df)
 
     # Only require the target row (the live one) to be fully engineered;
