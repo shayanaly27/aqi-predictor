@@ -1,0 +1,15 @@
+Pearls AQI Predictor — Live Links
+===================================
+
+Live Dashboard (frontend):
+https://aqi-dashboard-gamma-six.vercel.app
+
+Live API (backend):
+https://aqi-predictor-api-wodc.onrender.com
+
+Frontend source code repository:
+https://github.com/shayanaly27/aqi-dashboard
+
+This repository (aqi-predictor) is the backend/ML system. The frontend
+dashboard lives in a separate repository and is linked above, since the
+submission form only accepts a single GitHub URL.   

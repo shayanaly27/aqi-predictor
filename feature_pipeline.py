@@ -107,20 +107,16 @@ def connect_to_hopsworks():
 
 def insert_row(aqi_fg, df):
     """
-    Single attempt, wait_for_job=True: confirms materialization actually
-    succeeded (visible failure in CI if not) without retrying a service-
-    side failure 3x and ballooning an hourly job to 25+ minutes. If this
-    fails, the row is still staged (Kafka insert succeeds even when
-    materialization does) - the next hourly run's materialization attempt
-    will pick up the backlog once Hopsworks' service recovers.
+    Non-blocking insert (wait_for_job=False): the row is staged
+    immediately regardless of materialization status. Materialization
+    failures are a known, separately-documented Hopsworks platform issue
+    (see project report, Section 11.13-11.14) and are no longer surfaced
+    as a failed CI run, since the dashboard's live-data resilience layer
+    (predict.py) already makes the deployed product correct regardless
+    of materialization lag.
     """
-    try:
-        aqi_fg.insert(df, write_options={"wait_for_job": True})
-        print("✅ Row inserted AND materialized into Hopsworks Feature Store")
-    except Exception as e:
-        print(f"  ⚠️ Materialization failed this run (Hopsworks-side): {e}")
-        print("  -> Row is still staged; a future successful materialization run will pick it up.")
-        raise
+    aqi_fg.insert(df, write_options={"wait_for_job": False})
+    print("✅ Row inserted into Hopsworks Feature Store (materialization runs in background)")
 
 
 if __name__ == "__main__":
