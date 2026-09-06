@@ -1,14 +1,19 @@
 # Pearls AQI Predictor — Backend
 
+# Pearls AQI Predictor — Backend
+
 A serverless, end-to-end machine learning system that forecasts Karachi's Air Quality Index (AQI) **24, 48, and 72 hours** into the future. Built for the 10Pearls Shine — Data Science Track.
 
-Live API: **https://aqi-predictor-api-wodc.onrender.com**
+🔴 **Live API:** https://aqi-predictor-api-wodc.onrender.com
+🖥️ **Live dashboard:** https://aqi-dashboard-gamma-six.vercel.app
+🎨 **Frontend repo:** https://github.com/shayanaly27/aqi-dashboard
+📄 **Full project report:** [Pearls_AQI_Predictor_Report.docx](./Pearls_AQI_Predictor_Report.docx)
 
 > Note: the free-tier backend spins down after ~15 minutes of inactivity and takes 20–30s to wake up on the first request afterward — this is a Render free-tier characteristic, not a bug. See [Known Limitations](#known-limitations).
 
 ## What this repo does
 
-This is the ML/backend half of the project (see the separate [aqi-dashboard](#) repo for the frontend). It runs two automated pipelines unattended via GitHub Actions and serves predictions through a FastAPI backend:
+This is the ML/backend half of the project (see [aqi-dashboard](https://github.com/shayanaly27/aqi-dashboard) for the frontend). It runs two automated pipelines unattended via GitHub Actions and serves predictions through a FastAPI backend:
 
 - **Hourly Feature Pipeline** — pulls live weather + air-quality data and writes it into a Hopsworks Feature Store
 - **Daily Training Pipeline** — retrains three regression algorithms per forecast horizon, evaluates them, and registers the best-performing model per horizon to the Hopsworks Model Registry
@@ -38,21 +43,21 @@ Open-Meteo APIs → feature_pipeline.py → Hopsworks Feature Store
 
 ## Repository structure
 
-| File | Purpose |
-|---|---|
-| `feature_pipeline.py` | Hourly job — fetches live weather/AQI data, inserts into the Hopsworks Feature Group |
-| `backfill_historical.py` | One-time job — pulls ~3.5 years of historical data to bootstrap the Feature Store |
-| `merge_data.py` | Cleans and regularizes raw data onto a strict hourly grid |
-| `eda.py` | Exploratory data analysis (distribution, trend, seasonality, correlation) |
-| `train_model.py` | Trains Ridge / Random Forest / XGBoost / Keras per horizon, registers the best model |
-| `model_history.py` | Generates version-history JSON for the dashboard from the live Model Registry |
-| `shap_explain.py` | Full SHAP summary plots per horizon |
-| `compute_feature_importance.py` | Lightweight top-8 SHAP JSON consumed by the dashboard |
-| `predict.py` | Loads the latest models + recent features, produces a 3-day forecast |
-| `api.py` | FastAPI service exposing `/predict`, `/history`, `/feature-importance`, `/model-metrics`, `/model-versions` |
-| `backtest.py` / `quick_check.py` | Real-world accuracy validation against actual historical outcomes |
-| `check_feature_store.py` | Verifies the Feature View is returning fresh rows |
-| `test_deployment.py` | Sends a real inference request to a live Hopsworks Model Deployment |
+| File                             | Purpose                                                                                                                                                                           |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `feature_pipeline.py`            | Hourly job — fetches live weather/AQI data, inserts into the Hopsworks Feature Group                                                                                              |
+| `backfill_historical.py`         | One-time job — pulls ~3.5 years of historical data to bootstrap the Feature Store                                                                                                 |
+| `merge_data.py`                  | Cleans and regularizes raw data onto a strict hourly grid                                                                                                                         |
+| `eda.py`                         | Exploratory data analysis (distribution, trend, seasonality, correlation)                                                                                                         |
+| `train_model.py`                 | Trains Ridge / Random Forest / XGBoost / Keras per horizon, registers the best model                                                                                              |
+| `model_history.py`               | Generates version-history JSON for the dashboard from the live Model Registry                                                                                                     |
+| `shap_explain.py`                | Full SHAP summary plots per horizon                                                                                                                                               |
+| `compute_feature_importance.py`  | Lightweight top-8 SHAP JSON consumed by the dashboard                                                                                                                             |
+| `predict.py`                     | Fetches the current reading live from Open-Meteo, combines it with historical Feature Store data for lag/rolling features, loads the latest models, and produces a 3-day forecast |
+| `api.py`                         | FastAPI service exposing `/predict`, `/history`, `/feature-importance`, `/model-metrics`, `/model-versions`                                                                       |
+| `backtest.py` / `quick_check.py` | Real-world accuracy validation against actual historical outcomes                                                                                                                 |
+| `check_feature_store.py`         | Verifies the Feature View is returning fresh rows                                                                                                                                 |
+| `test_deployment.py`             | Sends a real inference request to a live Hopsworks Model Deployment                                                                                                               |
 
 ## Prerequisites
 
@@ -76,6 +81,7 @@ Create a `.env` file in the project root:
 ```
 HOPSWORKS_API_KEY=your_api_key_here
 ```
+
 
 ### 2. One-time bootstrap (only needed once, or when re-seeding history)
 
@@ -118,6 +124,17 @@ python backtest.py                # runs the full 15-point-per-horizon backtest
 python test_deployment.py         # sends a real request to a live Hopsworks deployment
 ```
 
+## API endpoints
+
+| Endpoint | Returns |
+|---|---|
+| `GET /predict` | 3-day forecast, current AQI/pollutants, and a `data_freshness` object. Add `?refresh=true` to bypass all caches. |
+| `GET /history?days=14` | Daily-averaged AQI for the last N days |
+| `GET /feature-importance` | Top-8 SHAP feature importance for the Day 1 model |
+| `GET /model-metrics` | RMSE/MAE/R² across all models and horizons |
+| `GET /model-versions` | Full version history per horizon from the Model Registry |
+| `GET /health` | Basic health check |
+
 ## Key results
 
 - **73%** of backtested 3-day forecasts landed within 10 AQI points of the actual recorded value; **93%** within 20 points, across 45 real historical comparisons
@@ -127,12 +144,12 @@ python test_deployment.py         # sends a real request to a live Hopsworks dep
 
 ## Known limitations
 
-- **Hopsworks free-tier materialization delays:** the background job that merges new feature rows into the queryable Feature View can stall or fail intermittently (a documented, cohort-wide free-tier issue). The API mitigates this by fetching the current AQI reading live from Open-Meteo directly, independent of Hopsworks' materialization status, and exposes a `data_freshness` field indicating how stale the historical Feature Store data is.
+- **Hopsworks free-tier materialization delays:** the background job that merges new feature rows into the queryable Feature View can stall or fail intermittently — a documented, cohort-wide issue on the free tier, not specific to this project. The API mitigates this directly: the current AQI/pollutant reading shown on the dashboard is fetched live from Open-Meteo at request time, independent of Hopsworks' materialization status, and every `/predict` response includes a `data_freshness` object reporting how far behind the historical Feature Store data is and whether it's currently considered stale.
 - **Render free-tier cold starts:** the backend spins down after ~15 minutes idle; the first request after that takes 20–30s to fully wake up (Hopsworks login + model downloads).
 - **72-hour forecast accuracy** is meaningfully weaker than 24h/48h — a genuinely harder forecasting problem given the current feature set.
 - Single-city scope, tuned specifically to Karachi's coordinates and pollution patterns.
 
-Full engineering write-up, EDA, model comparisons, and an honest accounting of every issue hit during development are documented in the accompanying project report.
+Full engineering write-up, EDA, model comparisons, and an honest accounting of every issue hit during development — including the Hopsworks materialization incident above — are documented in the accompanying [project report](./Pearls_AQI_Predictor_Report.docx).
 
 ## License
 
